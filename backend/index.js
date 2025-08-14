@@ -15,7 +15,7 @@ app.use(
     origin: [
       "http://localhost:5173",
       "http://localhost:3000",
-      "https://payment-wallet-714e.vercel.app"
+      "https://payment-wallet-714e.vercel.app",
       // Add your frontend URL when deployed
     ],
     credentials: true,
@@ -60,21 +60,26 @@ app.get("/healthz", async (req, res) => {
   }
 });
 
-// Mount routes
-app.use("/api/v1", authRoutes);
-app.use("/api/v1", accountRoutes);
-
 // Connect to DB for serverless (each request needs connection)
 app.use(async (req, res, next) => {
   try {
     if (mongoose.connection.readyState !== 1) {
+      console.log("Connecting to database...");
       await connectDB();
     }
     next();
   } catch (error) {
-    res.status(500).json({ message: "Database connection failed" });
+    console.error("Database connection failed:", error);
+    res.status(500).json({
+      message: "Database connection failed",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
   }
 });
+
+// Mount routes
+app.use("/api/v1", authRoutes);
+app.use("/api/v1", accountRoutes);
 
 // For local development
 if (process.env.NODE_ENV !== "production") {

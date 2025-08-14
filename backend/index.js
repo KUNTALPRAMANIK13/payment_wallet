@@ -15,6 +15,7 @@ app.use(
     origin: [
       "http://localhost:5173",
       "http://localhost:3000",
+      "https://payment-wallet-714e.vercel.app"
       // Add your frontend URL when deployed
     ],
     credentials: true,

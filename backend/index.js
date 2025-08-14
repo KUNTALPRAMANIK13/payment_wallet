@@ -7,11 +7,19 @@ import authRoutes from "./routes/auth.js";
 import accountRoutes from "./routes/account.js";
 
 const app = express();
-const PORT = process.env.PORT || 3000;
 
 // Middlewares
 app.use(express.json());
-app.use(cors());
+app.use(
+  cors({
+    origin: [
+      "http://localhost:5173",
+      "http://localhost:3000",
+      // Add your frontend URL when deployed
+    ],
+    credentials: true,
+  })
+);
 
 // Basic health check
 app.get("/", (req, res) => {
@@ -19,40 +27,71 @@ app.get("/", (req, res) => {
 });
 
 // DB-aware health endpoint
-app.get("/healthz", (req, res) => {
-  const state = mongoose.connection.readyState; // 0=disconnected, 1=connected, 2=connecting, 3=disconnecting
-  const stateText =
-    {
-      0: "disconnected",
-      1: "connected",
-      2: "connecting",
-      3: "disconnecting",
-    }[state] || "unknown";
+app.get("/healthz", async (req, res) => {
+  try {
+    // Ensure DB connection for serverless
+    if (mongoose.connection.readyState !== 1) {
+      await connectDB();
+    }
 
-  const isHealthy = state === 1;
-  res.status(isHealthy ? 200 : 503).json({
-    status: isHealthy ? "ok" : "degraded",
-    db: stateText,
-    uptime: process.uptime(),
-    timestamp: new Date().toISOString(),
-  });
+    const state = mongoose.connection.readyState;
+    const stateText =
+      {
+        0: "disconnected",
+        1: "connected",
+        2: "connecting",
+        3: "disconnecting",
+      }[state] || "unknown";
+
+    const isHealthy = state === 1;
+    res.status(isHealthy ? 200 : 503).json({
+      status: isHealthy ? "ok" : "degraded",
+      db: stateText,
+      uptime: process.uptime(),
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    res.status(503).json({
+      status: "error",
+      message: error.message,
+      timestamp: new Date().toISOString(),
+    });
+  }
 });
 
 // Mount routes
 app.use("/api/v1", authRoutes);
 app.use("/api/v1", accountRoutes);
 
-// Start server after DB init succeeds
-connectDB()
-  .then(() => {
-    app.listen(PORT, () => {
-      console.log(`Server is running on port ${PORT}`);
+// Connect to DB for serverless (each request needs connection)
+app.use(async (req, res, next) => {
+  try {
+    if (mongoose.connection.readyState !== 1) {
+      await connectDB();
+    }
+    next();
+  } catch (error) {
+    res.status(500).json({ message: "Database connection failed" });
+  }
+});
+
+// For local development
+if (process.env.NODE_ENV !== "production") {
+  const PORT = process.env.PORT || 3000;
+  connectDB()
+    .then(() => {
+      app.listen(PORT, () => {
+        console.log(`Server is running on port ${PORT}`);
+      });
+    })
+    .catch((err) => {
+      console.error(
+        "Failed to connect to MongoDB. Server not started.",
+        err?.message || err
+      );
+      process.exit(1);
     });
-  })
-  .catch((err) => {
-    console.error(
-      "Failed to connect to MongoDB. Server not started.",
-      err?.message || err
-    );
-    process.exit(1);
-  });
+}
+
+// Export for Vercel
+export default app;
